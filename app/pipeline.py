@@ -9,6 +9,7 @@ Ray Serve deployments.
 import os
 import gc
 import math
+import time
 import logging
 import threading
 import warnings
@@ -30,10 +31,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 DEVICE = os.getenv("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
 COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16" if DEVICE == "cuda" else "int8")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "16"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "16" if DEVICE == "cuda" else "2"))
 HF_TOKEN = os.getenv("HF_TOKEN", None)
 CACHE_DIR = os.getenv("CACHE_DIR", "/.cache")
 DEFAULT_MODEL = os.getenv("PRELOAD_MODEL", "large-v3")
+
+# Idle model eviction. Set MODEL_KEEP_ALIVE_SECONDS > 0 to unload Whisper
+# models that have not been used in that many seconds. Floor of 30s on the
+# sweep interval to avoid pegging a thread on tight loops.
+MODEL_KEEP_ALIVE_SECONDS = int(os.getenv("MODEL_KEEP_ALIVE_SECONDS", "0"))
+MODEL_EVICTION_INTERVAL_SECONDS = max(
+    30, int(os.getenv("MODEL_EVICTION_INTERVAL_SECONDS", "60"))
+)
 
 
 def get_canonical_models() -> list:
@@ -100,8 +109,12 @@ _model_load_lock = threading.Lock()
 # Model caches
 # ---------------------------------------------------------------------------
 _whisper_models: Dict[str, Any] = {}
+_whisper_models_last_used: Dict[str, float] = {}
 _align_models: Dict[str, Tuple[Any, Any]] = {}
 _diarize_pipeline: Optional[DiarizationPipeline] = None
+
+_eviction_thread_lock = threading.Lock()
+_eviction_thread_started = False
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +145,57 @@ def load_whisper_model(model_name: str):
                 )
                 _whisper_models[model_name] = model
                 logger.info(f"Model {model_name} loaded successfully")
+    _whisper_models_last_used[model_name] = time.time()
+    _ensure_eviction_thread()
     return _whisper_models[model_name]
+
+
+def _ensure_eviction_thread():
+    """Lazily start the idle-model eviction daemon (no-op if disabled)."""
+    global _eviction_thread_started
+    if MODEL_KEEP_ALIVE_SECONDS <= 0 or _eviction_thread_started:
+        return
+    with _eviction_thread_lock:
+        if _eviction_thread_started:
+            return
+        t = threading.Thread(
+            target=_eviction_loop, daemon=True, name="model-evictor"
+        )
+        t.start()
+        _eviction_thread_started = True
+        logger.info(
+            f"Idle model eviction enabled: unload after "
+            f"{MODEL_KEEP_ALIVE_SECONDS}s idle, sweep every "
+            f"{MODEL_EVICTION_INTERVAL_SECONDS}s"
+        )
+
+
+def _eviction_loop():
+    while True:
+        time.sleep(MODEL_EVICTION_INTERVAL_SECONDS)
+        if MODEL_KEEP_ALIVE_SECONDS <= 0:
+            continue
+        now = time.time()
+        candidates = [
+            name for name, last in list(_whisper_models_last_used.items())
+            if now - last > MODEL_KEEP_ALIVE_SECONDS and name in _whisper_models
+        ]
+        evicted_any = False
+        for name in candidates:
+            with _model_load_lock:
+                last = _whisper_models_last_used.get(name, 0)
+                if name in _whisper_models and now - last > MODEL_KEEP_ALIVE_SECONDS:
+                    logger.info(f"Evicting idle model {name}")
+                    del _whisper_models[name]
+                    _whisper_models_last_used.pop(name, None)
+                    evicted_any = True
+                    try:
+                        from app import metrics as prom_metrics
+                        prom_metrics.MODEL_EVICTIONS_TOTAL.labels(model=name).inc()
+                    except Exception:
+                        pass
+        if evicted_any:
+            clear_gpu_memory()
 
 
 def load_align_model(language_code: str):
