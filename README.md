@@ -81,7 +81,7 @@ PyTorch wheel they ship; the application code is identical.
 
 | Tag | PyTorch | CUDA wheels | Supported GPUs |
 |-----|---------|-------------|----------------|
-| `:latest`, `:vX.Y.Z` | 2.7.1 | cu121 | Pascal (10xx) through Hopper. Compatible with the broadest GPU range. |
+| `:latest`, `:vX.Y.Z` | 2.7.1 | cu126 | Pascal (10xx) through Hopper. Compatible with the broadest GPU range. |
 | `:blackwell`, `:vX.Y.Z-blackwell` | 2.8.0 | cu128 | Blackwell (RTX 50xx). Drops Pascal/Maxwell support per the PyTorch 2.8 cuDNN/CUDA 12.8 build. |
 
 If you have an RTX 50xx, use the `-blackwell` tag. Everyone else: use `:latest`.
@@ -91,7 +91,7 @@ To build a custom variant locally, override the build args:
 ```bash
 docker build \
   --build-arg TORCH_VERSION=2.7.1 \
-  --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 \
+  --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126 \
   -t whisperx-asr-service:custom .
 ```
 
@@ -967,7 +967,7 @@ For issues and questions:
 ## Changelog
 
 ### v0.3.2 (2026-05-03)
-- **Pascal/Blackwell image variants (#15):** `:latest` ships PyTorch 2.7.1 (cu121, supports Pascal through Hopper). New `:blackwell` tag ships PyTorch 2.8.0 (cu128) for RTX 50xx. The `Dockerfile` now exposes `TORCH_VERSION` and `TORCH_INDEX_URL` build args and re-pins torch after the WhisperX install so the requested version sticks.
+- **Pascal/Blackwell image variants (#15):** `:latest` ships PyTorch 2.7.1 (cu126, supports Pascal through Hopper). New `:blackwell` tag ships PyTorch 2.8.0 (cu128) for RTX 50xx. The `Dockerfile` now exposes `TORCH_VERSION` and `TORCH_INDEX_URL` build args and re-pins torch after the WhisperX install so the requested version sticks.
 - **Device-aware `BATCH_SIZE` default (#12):** the default is now 16 on cuda and 2 on cpu. Long CPU runs no longer OOM-kill (exit 137) under the previous 16 default.
 - **Idle model eviction (#16):** new `MODEL_KEEP_ALIVE_SECONDS` env var (default 0/disabled) unloads Whisper models that have been idle longer than the configured window. `MODEL_EVICTION_INTERVAL_SECONDS` controls sweep frequency (floor 30s).
 - **Real Prometheus `/metrics` (#13):** `/metrics` now returns OpenMetrics text instead of JSON. New histograms and counters cover request duration, status, audio duration/size, in-flight requests, loaded model count, model evictions, and VRAM. The previous JSON shape is preserved at `/queue-metrics`.

@@ -11,7 +11,7 @@ env:
 jobs:
   build-default:
     runs-on: ubuntu-latest
-    name: Build default image (torch 2.7.1, cu121)
+    name: Build default image (torch 2.7.1, cu126)
 
     steps:
       - name: Checkout code
@@ -67,7 +67,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             TORCH_VERSION=2.7.1
-            TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
+            TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
           cache-from: type=gha,scope=default
           cache-to: type=gha,mode=max,scope=default
           platforms: linux/amd64

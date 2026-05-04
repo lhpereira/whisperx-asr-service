@@ -4,10 +4,12 @@
 # Build args (override per image variant):
 #   TORCH_VERSION   - PyTorch version to install (default 2.7.1, broadly
 #                     compatible from Pascal through Hopper).
-#   TORCH_INDEX_URL - PyTorch wheel index URL (default cu121). For Blackwell
-#                     (RTX 50xx) use TORCH_VERSION=2.8.0 with cu128.
+#   TORCH_INDEX_URL - PyTorch wheel index URL (default cu126; still supports
+#                     Pascal/Volta/Turing/Ampere/Hopper). For Blackwell
+#                     (RTX 50xx) use TORCH_VERSION=2.8.0 with cu128. CUDA
+#                     12.8 dropped Pascal/Maxwell support per upstream.
 ARG TORCH_VERSION=2.7.1
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
 
 FROM nvidia/cuda:12.3.2-cudnn9-devel-ubuntu22.04
 
@@ -60,7 +62,7 @@ RUN pip3 install --no-cache-dir --upgrade pyannote.audio
 # Re-pin torch/torchaudio to the requested version. WhisperX (sealambda fork)
 # requires torch>=2.8 and silently upgrades the install above to 2.8, which
 # breaks Pascal cards. Reinstalling here ensures TORCH_VERSION sticks for the
-# image variant being built (cu121/2.7.1 default; cu128/2.8.0 for Blackwell).
+# image variant being built (cu126/2.7.1 default; cu128/2.8.0 for Blackwell).
 RUN pip3 install --no-cache-dir \
     torch==${TORCH_VERSION} \
     torchaudio==${TORCH_VERSION} \
