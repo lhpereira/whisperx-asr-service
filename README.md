@@ -687,10 +687,22 @@ curl http://localhost:9000/metrics
 | `whisperx_service_info` | Info | Static labels: version, device, compute_type, serve_mode |
 
 **Ray Serve caveat:** `/metrics` is served by the ingress process. Whisper
-models load inside replica processes, so `whisperx_loaded_models` and
-`whisperx_vram_allocated_bytes` will read 0 in Ray Serve mode. HTTP-level
-metrics (request counts, durations, audio sizes) are accurate. Use the Ray
-Dashboard at port 8265 for per-replica state.
+models load inside replica processes, so `whisperx_loaded_models`,
+`whisperx_vram_allocated_bytes`, and `whisperx_model_evictions_total` will
+read 0 (or be missing) in Ray Serve mode. These counters and gauges are
+per-process; without `prometheus_client` multi-process mode the ingress'
+registry never sees the replica's events. HTTP-level metrics (request
+counts, durations, audio sizes) are accurate in both modes because they
+are recorded inside the ingress handler. Use the Ray Dashboard at port
+8265 for per-replica state, and tail `serve/replica_*` log files for
+eviction events. Multi-process metrics support is a planned follow-up.
+
+In simple mode (`SERVE_MODE=simple`) all metrics including the eviction
+counter and loaded-model gauge work as expected, since the model cache
+and the `/metrics` handler share a process. Each Whisper model load
+pre-registers a `whisperx_model_evictions_total{model="<name>"} 0` row
+so dashboards can graph the metric from the first load onward, not only
+after the first eviction.
 
 The legacy JSON shape (queue/loaded model state) is still available at
 `GET /queue-metrics` for callers that depended on it.

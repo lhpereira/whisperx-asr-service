@@ -145,6 +145,14 @@ def load_whisper_model(model_name: str):
                 )
                 _whisper_models[model_name] = model
                 logger.info(f"Model {model_name} loaded successfully")
+                # Pre-register the eviction counter time series for this model
+                # so the row appears in /metrics with value 0 from the moment
+                # the model is loaded, instead of only after the first eviction.
+                try:
+                    from app import metrics as prom_metrics
+                    prom_metrics.MODEL_EVICTIONS_TOTAL.labels(model=model_name)
+                except Exception:
+                    pass
     _whisper_models_last_used[model_name] = time.time()
     _ensure_eviction_thread()
     return _whisper_models[model_name]
